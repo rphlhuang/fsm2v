@@ -5,10 +5,12 @@
 // the name to rename it inline.
 
 import { useEffect, useRef, useState } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { createPortal } from 'react-dom';
+import { Handle, type NodeProps } from '@xyflow/react';
 import type { Assignment } from '../../model/types';
 import { useFSMStore } from '../../store/fsmStore';
 import { SideLabel } from '../../notation/SideLabel';
+import { HANDLE_SIDES } from './handles';
 
 export interface StateNodeData {
   label: string;
@@ -19,12 +21,11 @@ export interface StateNodeData {
   [key: string]: unknown;
 }
 
-const HANDLE_SIDES = [
-  { id: 'top', position: Position.Top },
-  { id: 'right', position: Position.Right },
-  { id: 'bottom', position: Position.Bottom },
-  { id: 'left', position: Position.Left },
-];
+// The reset bolt: short lead, two triangles, then a longer straight run into the
+// arrowhead. Shared between the in-node marker and the drag ghost.
+const BOLT_PATH = 'M0 9 L7 9 L13 4 L19 14 L25 9 L44 9';
+const BOLT_W = 44;
+const BOLT_H = 18;
 
 export function StateNode({ id, data, selected }: NodeProps) {
   const d = data as StateNodeData;
@@ -37,6 +38,8 @@ export function StateNode({ id, data, selected }: NodeProps) {
   const resetSelected = useFSMStore((s) => s.selectedId === 'reset');
 
   const [editing, setEditing] = useState(false);
+  // While dragging the reset bolt, a ghost copy follows the cursor (see below).
+  const [dragGhost, setDragGhost] = useState<{ x: number; y: number } | null>(null);
 
   const startEditing = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -44,7 +47,8 @@ export function StateNode({ id, data, selected }: NodeProps) {
   };
 
   // Click the reset bolt to select it (Backspace then clears the reset); drag
-  // it onto another state to move the reset designation there.
+  // it onto another state to move the reset designation there. During a drag a
+  // ghost bolt tracks the cursor so the gesture reads clearly.
   const onBoltPointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -52,11 +56,13 @@ export function StateNode({ id, data, selected }: NodeProps) {
     const startY = e.clientY;
     let moved = false;
     const move = (ev: PointerEvent) => {
-      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 4) moved = true;
+      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 4) moved = true;
+      if (moved) setDragGhost({ x: ev.clientX, y: ev.clientY });
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      setDragGhost(null);
       if (!moved) {
         select('reset');
         return;
@@ -88,15 +94,15 @@ export function StateNode({ id, data, selected }: NodeProps) {
           onPointerDown={onBoltPointerDown}
           onClick={(e) => e.stopPropagation()}
           className="nodrag absolute right-full top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing"
-          width="31"
-          height="18"
-          viewBox="0 0 31 18"
+          width={BOLT_W}
+          height={BOLT_H}
+          viewBox={`0 0 ${BOLT_W} ${BOLT_H}`}
           style={{ overflow: 'visible' }}
         >
           {/* Fat invisible hit area so the thin bolt is easy to grab/click. */}
-          <path d="M0 9 L7 9 L13 4 L19 14 L25 9 L31 9" fill="none" stroke="transparent" strokeWidth="14" />
+          <path d={BOLT_PATH} fill="none" stroke="transparent" strokeWidth="14" />
           <path
-            d="M0 9 L7 9 L13 4 L19 14 L25 9 L31 9"
+            d={BOLT_PATH}
             fill="none"
             stroke={resetSelected ? '#3b82f6' : '#475569'}
             strokeWidth={resetSelected ? 2.25 : 1.75}
@@ -107,13 +113,37 @@ export function StateNode({ id, data, selected }: NodeProps) {
         </svg>
       )}
 
-      {/* Connection handles on all four sides (Loose mode lets them be targets too). */}
+      {/* Ghost bolt that follows the cursor while the reset marker is dragged. */}
+      {dragGhost &&
+        createPortal(
+          <svg
+            className="pointer-events-none fixed z-50"
+            style={{ left: dragGhost.x, top: dragGhost.y, transform: 'translate(-100%, -50%)', overflow: 'visible' }}
+            width={BOLT_W}
+            height={BOLT_H}
+            viewBox={`0 0 ${BOLT_W} ${BOLT_H}`}
+          >
+            <path
+              d={BOLT_PATH}
+              fill="none"
+              stroke="#3b82f6"
+              strokeWidth={1.75}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              markerEnd="url(#fsm-arrow-sel)"
+            />
+          </svg>,
+          document.body,
+        )}
+
+      {/* Connection handles: 4 sides + 4 corners (Loose mode lets them be targets too). */}
       {HANDLE_SIDES.map((h) => (
         <Handle
           key={h.id}
           id={h.id}
           type="source"
           position={h.position}
+          style={h.style}
           className="!h-2 !w-2 !border !border-white !bg-slate-500"
         />
       ))}

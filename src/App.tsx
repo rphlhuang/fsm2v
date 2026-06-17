@@ -9,20 +9,20 @@ import { SetupDialog } from './components/dialogs/SetupDialog';
 
 export default function App() {
   return (
-    <div className="flex h-screen flex-col bg-slate-50 text-slate-900">
-      <Toolbar />
-      <div className="flex min-h-0 flex-1">
-        <ReactFlowProvider>
+    <ReactFlowProvider>
+      <div className="flex h-screen flex-col bg-slate-50 text-slate-900">
+        <Toolbar />
+        <div className="flex min-h-0 flex-1">
           <div className="relative min-w-0 flex-1">
             <FSMCanvas />
             <ChecklistPanel />
             <InspectorPanel />
           </div>
-        </ReactFlowProvider>
-        <CodePanel />
+          <CodePanel />
+        </div>
+        <LossyConvertDialog />
+        <SetupDialog />
       </div>
-      <LossyConvertDialog />
-      <SetupDialog />
-    </div>
+    </ReactFlowProvider>
   );
 }

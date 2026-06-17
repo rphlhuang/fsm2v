@@ -63,9 +63,17 @@ derived from it. Read these in order to understand the data flow:
    typed label text and `Assignment`; `SideLabel.tsx` renders inverted signals
    with an overbar.
 
-8. **`src/components/`** — `canvas/` (React Flow nodes/edges/canvas), `panels/`
-   (Toolbar, ChecklistPanel, InspectorPanel, CodePanel), `dialogs/`
-   (LossyConvertDialog).
+8. **`src/io/`** — `fsmFile.ts` serializes/validates the model to a portable
+   `.json` file (envelope `{ app:'fsm2v', version, fsm }`); re-import goes through
+   the store's `loadFSM`, which bumps the module `idCounter` past imported ids so
+   new ids don't collide. `exportImage.ts` renders the `.react-flow__viewport`
+   to PNG/SVG via `html-to-image`, framed with `getNodesBounds` +
+   `getViewportForBounds`.
+
+9. **`src/components/`** — `canvas/` (React Flow nodes/edges/canvas; `handles.ts`
+   defines the 8 connection points and their outward normals, shared by
+   `StateNode` and `TransitionEdge`), `panels/` (Toolbar, ChecklistPanel,
+   InspectorPanel, CodePanel), `dialogs/` (LossyConvertDialog).
 
 ## Conventions
 
@@ -77,3 +85,5 @@ derived from it. Read these in order to understand the data flow:
   `minterms.ts` and re-check its test, since both validation and QM depend on it.
 - Three orthogonal toggles drive codegen, all in `config`: `type`
   (mealy/moore), `encoding` (one-hot/binary), `style` (behavioral/structural).
+- `ReactFlowProvider` wraps the whole app (`App.tsx`), not just the canvas, so the
+  Toolbar can call `useReactFlow()` for image export. Keep it at that scope.

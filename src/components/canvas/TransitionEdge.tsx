@@ -18,6 +18,7 @@ import { useFSMStore } from '../../store/fsmStore';
 import { parseEdgeLabel } from '../../notation/parseLabel';
 import { serializeSide } from '../../notation/serializeLabel';
 import { SideLabel } from '../../notation/SideLabel';
+import { HANDLE_NORMALS } from './handles';
 
 export interface TransitionEdgeData {
   guard: Assignment;
@@ -29,6 +30,9 @@ export interface TransitionEdgeData {
   siblingIndex: number;
   /** Total arcs between the same (unordered) node pair. */
   siblingCount: number;
+  /** Handle ids (incl. diagonals) for outward-normal routing; may be null. */
+  sourceHandleId: string | null;
+  targetHandleId: string | null;
   [key: string]: unknown;
 }
 
@@ -60,28 +64,39 @@ export function TransitionEdge(props: EdgeProps) {
   const index = d?.siblingIndex ?? 0;
   const count = d?.siblingCount ?? 1;
 
+  // Outward normal for each endpoint: prefer the (possibly diagonal) handle id,
+  // falling back to the cardinal side React Flow reports.
+  const normalFor = (handleId: string | null, pos: Position) =>
+    (handleId ? HANDLE_NORMALS[handleId] : undefined) ?? NORMALS[pos] ?? NORMALS[Position.Top];
+  const sourceNormal = normalFor(d?.sourceHandleId ?? null, sourcePosition);
+  const targetNormal = normalFor(d?.targetHandleId ?? null, targetPosition);
+
   let edgePath: string;
   let labelX: number;
   let labelY: number;
 
   if (isSelfLoop) {
-    // Bow a loop outward along the source handle's normal, growing each extra
-    // self-loop to a larger radius so they nest instead of overlap.
-    const n = NORMALS[sourcePosition] ?? NORMALS[Position.Top];
-    const tx = -n.y;
-    const ty = n.x; // tangent (perpendicular to the normal)
-    const r = 46 + index * 22;
-    const spread = 16;
-    const c1x = sourceX - tx * spread + n.x * r;
-    const c1y = sourceY - ty * spread + n.y * r;
-    const c2x = sourceX + tx * spread + n.x * r;
-    const c2y = sourceY + ty * spread + n.y * r;
+    // Leave along the source handle's normal and arrive along the target's, so
+    // a same-side loop bows out as a clean rounded arc and an adjacent-side loop
+    // (e.g. top->right) reads as a rounded-square corner. Extra self-loops grow
+    // to a larger radius so they nest instead of overlapping.
+    const n1 = sourceNormal;
+    const n2 = targetNormal;
+    const r = 58 + index * 24;
+    const c1x = sourceX + n1.x * r;
+    const c1y = sourceY + n1.y * r;
+    const c2x = targetX + n2.x * r;
+    const c2y = targetY + n2.y * r;
     edgePath = `M ${sourceX} ${sourceY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${targetX} ${targetY}`;
-    labelX = sourceX + n.x * (r + 8);
-    labelY = sourceY + n.y * (r + 8);
+    // Place the label out past the bulge along the averaged outward direction.
+    const ax = n1.x + n2.x;
+    const ay = n1.y + n2.y;
+    const al = Math.hypot(ax, ay) || 1;
+    labelX = (sourceX + targetX) / 2 + (ax / al) * (r * 0.7);
+    labelY = (sourceY + targetY) / 2 + (ay / al) * (r * 0.7);
   } else {
-    const n1 = NORMALS[sourcePosition] ?? { x: 0, y: 0 };
-    const n2 = NORMALS[targetPosition] ?? { x: 0, y: 0 };
+    const n1 = sourceNormal;
+    const n2 = targetNormal;
     const dx = targetX - sourceX;
     const dy = targetY - sourceY;
     const dist = Math.hypot(dx, dy) || 1;
@@ -186,7 +201,7 @@ function EdgeLabel({
       {editing ? (
         <LabelInput
           initial={seedText(data, config)}
-          placeholder={config.type === 'mealy' ? 'e.g. 10 / 1' : 'e.g. 10  or  !A, B'}
+          placeholder={config.type === 'mealy' ? '10 / 1' : '10'}
           onCommit={(text) => {
             const res = parseEdgeLabel(text, config);
             if (res.ok) updateTransition(id, { guard: res.value.guard, outputs: res.value.outputs });

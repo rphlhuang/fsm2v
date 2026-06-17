@@ -23,6 +23,14 @@ import { mealyToMoore, mooreToMealy } from '../model/convert';
 let idCounter = 0;
 const nextId = (prefix: string) => `${prefix}_${++idCounter}`;
 
+/** Bump the id counter past any numeric suffix in `ids` so new ids never collide. */
+const advanceIdCounter = (ids: string[]) => {
+  for (const id of ids) {
+    const m = /_(\d+)$/.exec(id);
+    if (m) idCounter = Math.max(idCounter, Number(m[1]));
+  }
+};
+
 interface PendingConversion {
   to: MachineType;
   lossyStateLabels: string[];
@@ -43,6 +51,9 @@ interface FSMStore extends FSM {
   select: (id: string | null) => void;
   openSetup: (view: 'choose' | 'table') => void;
   closeSetup: () => void;
+
+  // --- whole-machine load (file import) ---
+  loadFSM: (fsm: FSM) => void;
 
   // --- config ---
   requestType: (type: MachineType) => void;
@@ -93,6 +104,21 @@ export const useFSMStore = create<FSMStore>((set, get) => ({
   select: (id) => set({ selectedId: id }),
   openSetup: (view) => set({ setupOpen: true, setupView: view }),
   closeSetup: () => set({ setupOpen: false }),
+
+  loadFSM: (fsm) => {
+    advanceIdCounter([
+      ...fsm.states.map((s) => s.id),
+      ...fsm.transitions.map((t) => t.id),
+    ]);
+    set({
+      config: fsm.config,
+      states: fsm.states,
+      transitions: fsm.transitions,
+      selectedId: null,
+      pendingConversion: null,
+      setupOpen: false,
+    });
+  },
 
   requestType: (type) => {
     const fsm = get() as FSM;

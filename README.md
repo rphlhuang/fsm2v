@@ -21,7 +21,21 @@ npm run build    # type-check + production build
 - The **Four Rules** checklist (top-left) turns green when the machine is
   completely specified, uniquely specified, has a reset state, and uses pure
   Mealy/Moore notation.
-- The **Verilog panel** (right) updates live.
+- The **Verilog panel** (right) updates live; collapse it with **›** to reclaim
+  canvas space, reopen it from the edge tab, and drag its left edge to resize.
+- States have **8 connection points** (4 sides + 4 corners) so arcs can route
+  cleanly. **Self-loops** bow out as a tidy rounded arc (or a rounded-square
+  corner when they leave one side and return on an adjacent one). The **reset
+  bolt** can be dragged onto another state to move the reset there.
+
+### Save, load & export
+
+- **Save** downloads the whole machine as a small `.json` file
+  (`fsm.json`); **Load** restores it later, reproducing the exact diagram
+  (positions, labels, guards, config, reset). Loading replaces the current
+  machine.
+- **PNG** / **SVG** download a high-quality image of the diagram instead of a
+  screenshot.
 
 ### Toolbar toggles
 
@@ -56,5 +70,7 @@ Inverted signals are typed with `!` and render with an overbar.
   the structural next-state and output equations.
 - **`src/verilog/`** — behavioral and structural generators (+ shared encoding
   and diagram-tracing comments).
+- **`src/io/`** — file save/load (`fsmFile.ts`) and PNG/SVG image export
+  (`exportImage.ts`).
 
 *created with Claude Code*

@@ -52,10 +52,18 @@ export function FSMCanvas() {
   );
 
   const edges: Edge[] = useMemo(() => {
-    // Count arcs between each *unordered* node pair so the edge renderer can fan
-    // parallel arcs out (including a pair's two directions) instead of stacking.
-    const pairKey = (t: { source: string; target: string }) =>
-      [t.source, t.target].sort().join('::');
+    // Fan apart only arcs that would actually overlap: same unordered node pair
+    // *and* same handles. Arcs leaving/arriving on different handles already
+    // route apart on their own, so they must not nudge each other.
+    const pairKey = (t: {
+      source: string;
+      target: string;
+      sourceHandle?: string | null;
+      targetHandle?: string | null;
+    }) =>
+      [`${t.source}:${t.sourceHandle ?? ''}`, `${t.target}:${t.targetHandle ?? ''}`]
+        .sort()
+        .join('::');
     const groupCount = new Map<string, number>();
     const groupIndex = new Map<string, number>();
     for (const t of transitions) {
@@ -82,6 +90,8 @@ export function FSMCanvas() {
           isMealy: config.type === 'mealy',
           siblingIndex: idx,
           siblingCount: groupCount.get(key) ?? 1,
+          sourceHandleId: t.sourceHandle ?? null,
+          targetHandleId: t.targetHandle ?? null,
         },
       };
     });

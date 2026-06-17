@@ -94,7 +94,7 @@ function hasResetState(fsm: FSM): RuleResult {
     pass: exists,
     detail: exists
       ? `Reset = ${fsm.states.find((s) => s.id === fsm.config.resetStateId)?.label}.`
-      : 'Right-click a state and mark it as the reset state.',
+      : 'Click a state and choose “Set as reset” in the inspector.',
   };
 }
 

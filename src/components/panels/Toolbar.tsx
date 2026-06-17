@@ -1,7 +1,10 @@
 // Top toolbar: machine type, encoding, code style, and input/output names.
 
-import { useEffect, useState } from 'react';
-import { useFSMStore } from '../../store/fsmStore';
+import { useEffect, useRef, useState } from 'react';
+import { useReactFlow } from '@xyflow/react';
+import { selectFSM, useFSMStore } from '../../store/fsmStore';
+import { parseFSMFile, serializeFSM } from '../../io/fsmFile';
+import { exportCanvasImage } from '../../io/exportImage';
 
 function Segmented<T extends string>({
   label,
@@ -95,6 +98,35 @@ export function Toolbar() {
   const setOutputs = useFSMStore((s) => s.setOutputs);
   const addState = useFSMStore((s) => s.addState);
   const openSetup = useFSMStore((s) => s.openSetup);
+  const loadFSM = useFSMStore((s) => s.loadFSM);
+  const { getNodes } = useReactFlow();
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const onSave = () => {
+    const json = serializeFSM(selectFSM(useFSMStore.getState()));
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'fsm.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onLoadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-loading the same file
+    if (!file) return;
+    const res = parseFSMFile(await file.text());
+    if (!res.ok) {
+      alert(`Could not load file: ${res.error}`);
+      return;
+    }
+    const nonEmpty = useFSMStore.getState().states.length > 0;
+    if (nonEmpty && !window.confirm('Replace the current state machine with the loaded file?')) {
+      return;
+    }
+    loadFSM(res.fsm);
+  };
 
   return (
     <div className="flex items-end gap-5 border-b border-slate-300 bg-white px-4 py-2">
@@ -154,12 +186,61 @@ export function Toolbar() {
         </button>
       </div>
 
-      <button
-        onClick={() => addState({ x: 120 + Math.random() * 200, y: 80 + Math.random() * 160 })}
-        className="ml-auto rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
-      >
-        + Add State
-      </button>
+      <div className="ml-auto flex items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">File</span>
+          <div className="flex overflow-hidden rounded-md border border-slate-300">
+            <button
+              onClick={onSave}
+              className="bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              title="Download this state machine as a file"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => fileInput.current?.click()}
+              className="border-l border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              title="Load a state machine from a file"
+            >
+              Load
+            </button>
+          </div>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={onLoadFile}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Image</span>
+          <div className="flex overflow-hidden rounded-md border border-slate-300">
+            <button
+              onClick={() => exportCanvasImage('png', getNodes())}
+              className="bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              title="Download a high-resolution PNG"
+            >
+              PNG
+            </button>
+            <button
+              onClick={() => exportCanvasImage('svg', getNodes())}
+              className="border-l border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              title="Download a scalable SVG"
+            >
+              SVG
+            </button>
+          </div>
+        </div>
+
+        <button
+          onClick={() => addState({ x: 120 + Math.random() * 200, y: 80 + Math.random() * 160 })}
+          className="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+        >
+          + Add State
+        </button>
+      </div>
     </div>
   );
 }
