@@ -56,3 +56,5 @@ Inverted signals are typed with `!` and render with an overbar.
   the structural next-state and output equations.
 - **`src/verilog/`** — behavioral and structural generators (+ shared encoding
   and diagram-tracing comments).
+
+*created with Claude Code*
