@@ -114,6 +114,7 @@ function TransitionEditor({ transitionId }: { transitionId: string }) {
   const transition = useFSMStore((s) => s.transitions.find((x) => x.id === transitionId))!;
   const states = useFSMStore((s) => s.states);
   const updateTransition = useFSMStore((s) => s.updateTransition);
+  const reverseTransition = useFSMStore((s) => s.reverseTransition);
   const removeTransition = useFSMStore((s) => s.removeTransition);
 
   const srcLabel = states.find((s) => s.id === transition.source)?.label ?? '?';
@@ -163,12 +164,21 @@ function TransitionEditor({ transitionId }: { transitionId: string }) {
         />
       </label>
       {error && <p className="text-xs text-red-600">{error}</p>}
-      <button
-        onClick={() => removeTransition(transitionId)}
-        className="w-full rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-      >
-        Delete transition
-      </button>
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => reverseTransition(transitionId)}
+          className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+          title={`Reverse direction (${dstLabel} → ${srcLabel})`}
+        >
+          ⇄ Reverse direction
+        </button>
+        <button
+          onClick={() => removeTransition(transitionId)}
+          className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { inputWeight } from '../model/minterms';
 import { QM_VAR_LIMIT, minimize, sopToVerilog } from '../logic/quineMcCluskey';
 import { buildEncoding, type EncodingInfo } from './encoding';
 import { banner, describeTransition } from './comments';
+import { makeEmitter, type GenResult } from './emit';
 
 /** Does input-minterm `m` satisfy `guard` (over ordered `inputs`)? */
 function matchesGuard(m: number, guard: Assignment, inputs: string[]): boolean {
@@ -78,9 +79,9 @@ function nextStateVars(fsm: FSM, enc: EncodingInfo): string[] {
   return [...enc.stateVarNames, ...fsm.config.inputs];
 }
 
-export function generateStructural(fsm: FSM): string {
+export function generateStructural(fsm: FSM): GenResult {
   if (fsm.states.length === 0) {
-    return '// Add at least one state to generate Verilog.';
+    return { code: '// Add at least one state to generate Verilog.', owners: [null] };
   }
 
   const enc = buildEncoding(fsm);
@@ -88,56 +89,56 @@ export function generateStructural(fsm: FSM): string {
   const ni = fsm.config.inputs.length;
   const oneHot = enc.encoding === 'one-hot';
   const reset = enc.codes[0];
-  const out: string[] = [];
+  const e = makeEmitter();
 
-  out.push(banner('Structural FSM  —  FDRE flip-flops + minimized SOP logic'));
-  out.push(`// Type: ${fsm.config.type.toUpperCase()}   Encoding: ${fsm.config.encoding}`);
+  e.push(banner('Structural FSM  —  FDRE flip-flops + minimized SOP logic'));
+  e.push(`// Type: ${fsm.config.type.toUpperCase()}   Encoding: ${fsm.config.encoding}`);
   if (nb + ni > QM_VAR_LIMIT) {
-    out.push(`// NOTE: ${nb + ni} variables exceeds the QM limit (${QM_VAR_LIMIT}); equations are`);
-    out.push('//       emitted in canonical (un-minimized) form to stay responsive.');
+    e.push(`// NOTE: ${nb + ni} variables exceeds the QM limit (${QM_VAR_LIMIT}); equations are`);
+    e.push('//       emitted in canonical (un-minimized) form to stay responsive.');
   }
-  out.push('');
-  out.push('module fsm (');
-  out.push(portList(fsm));
-  out.push(');');
-  out.push('');
+  e.push('');
+  e.push('module fsm (');
+  e.push(portList(fsm));
+  e.push(');');
+  e.push('');
 
   // ---- State wires -----------------------------------------------------
-  out.push('  // State register wires (Q) and next-state drives (D)');
+  e.push('  // State register wires (Q) and next-state drives (D)');
   if (oneHot) {
     for (const c of enc.codes) {
-      out.push(`  wire q_${c.state.label}, d_${c.state.label}; // 1 = machine is in ${c.state.label}`);
+      e.push(`  wire q_${c.state.label}, d_${c.state.label}; // 1 = machine is in ${c.state.label}`, c.state.id);
     }
   } else {
-    out.push(`  wire [${nb - 1}:0] Q; // current state, encoded`);
-    out.push(`  wire [${nb - 1}:0] D; // next state`);
+    e.push(`  wire [${nb - 1}:0] Q; // current state, encoded`);
+    e.push(`  wire [${nb - 1}:0] D; // next state`);
   }
-  out.push('');
+  e.push('');
 
   // ---- Flip-flops ------------------------------------------------------
-  out.push('  // State flip-flops (Xilinx primitives)');
+  e.push('  // State flip-flops (Xilinx primitives)');
   if (oneHot) {
     for (const c of enc.codes) {
       const isReset = c.index === 0;
       if (isReset) {
-        out.push(`  // ${c.state.label} is the reset state -> FDSE so it comes up as 1`);
-        out.push(`  FDSE #(.INIT(1'b1)) ff_${c.state.label} (.C(clk), .CE(1'b1), .D(d_${c.state.label}), .S(rst), .Q(q_${c.state.label}));`);
+        e.push(`  // ${c.state.label} is the reset state -> FDSE so it comes up as 1`, c.state.id);
+        e.push(`  FDSE #(.INIT(1'b1)) ff_${c.state.label} (.C(clk), .CE(1'b1), .D(d_${c.state.label}), .S(rst), .Q(q_${c.state.label}));`, c.state.id);
       } else {
-        out.push(`  FDRE #(.INIT(1'b0)) ff_${c.state.label} (.C(clk), .CE(1'b1), .D(d_${c.state.label}), .R(rst), .Q(q_${c.state.label}));`);
+        e.push(`  FDRE #(.INIT(1'b0)) ff_${c.state.label} (.C(clk), .CE(1'b1), .D(d_${c.state.label}), .R(rst), .Q(q_${c.state.label}));`, c.state.id);
       }
     }
   } else {
-    out.push(`  // Reset state ${reset.state.label} = ${nb}'b${reset.bits}, so all bits reset to 0`);
+    e.push(`  // Reset state ${reset.state.label} = ${nb}'b${reset.bits}, so all bits reset to 0`, reset.state.id);
     for (let p = nb - 1; p >= 0; p--) {
-      out.push(`  FDRE #(.INIT(1'b0)) ff_Q${p} (.C(clk), .CE(1'b1), .D(D[${p}]), .R(rst), .Q(Q[${p}]));`);
+      e.push(`  FDRE #(.INIT(1'b0)) ff_Q${p} (.C(clk), .CE(1'b1), .D(D[${p}]), .R(rst), .Q(Q[${p}]));`);
     }
   }
-  out.push('');
+  e.push('');
 
   // ---- Next-state equations -------------------------------------------
   const vars = nextStateVars(fsm, enc);
   const { onSet, dontCare } = nextStateTruth(fsm, enc);
-  out.push('  // Next-state logic (minimized sum-of-products)');
+  e.push('  // Next-state logic (minimized sum-of-products)');
   for (let p = 0; p < nb; p++) {
     const sop = minimize(nb + ni, onSet[p], dontCare);
     const expr = sopToVerilog(sop, vars);
@@ -146,18 +147,20 @@ export function generateStructural(fsm: FSM): string {
       const code = enc.byId.get(t.target)?.code ?? 0;
       return (code >> p) & 1;
     });
+    // One-hot bit p belongs to a specific state; binary bits are shared.
+    const stateOwner = oneHot ? enc.codes.find((c) => c.index === p)!.state.id : null;
     const lhs = oneHot ? `d_${enc.codes.find((c) => c.index === p)!.state.label}` : `D[${p}]`;
     const meaning = oneHot
       ? `// ${lhs}: next state is ${enc.codes.find((c) => c.index === p)!.state.label}`
       : `// ${lhs}: bit ${p} of the next-state code`;
-    out.push(`  ${meaning}`);
-    for (const t of drivers) out.push(`  //   driven by: ${describeTransition(fsm, t)}`);
-    out.push(`  assign ${lhs} = ${expr};`);
+    e.push(`  ${meaning}`, stateOwner);
+    for (const t of drivers) e.push(`  //   driven by: ${describeTransition(fsm, t)}`, t.id);
+    e.push(`  assign ${lhs} = ${expr};`, stateOwner);
   }
-  out.push('');
+  e.push('');
 
   // ---- Output equations ------------------------------------------------
-  out.push('  // FSM outputs (minimized sum-of-products)');
+  e.push('  // FSM outputs (minimized sum-of-products)');
   for (const o of fsm.config.outputs) {
     if (fsm.config.type === 'moore') {
       // Output is a function of the state bits only.
@@ -170,8 +173,8 @@ export function generateStructural(fsm: FSM): string {
         else if ((sc.state.outputs[o] ?? 0) === 1) on.add(code);
       }
       const sop = minimize(nb, on, dc);
-      out.push(`  // ${o}: Moore output, high in states { ${enc.codes.filter((c) => (c.state.outputs[o] ?? 0) === 1).map((c) => c.state.label).join(', ') || 'none'} }`);
-      out.push(`  assign ${o} = ${sopToVerilog(sop, enc.stateVarNames)};`);
+      e.push(`  // ${o}: Moore output, high in states { ${enc.codes.filter((c) => (c.state.outputs[o] ?? 0) === 1).map((c) => c.state.label).join(', ') || 'none'} }`);
+      e.push(`  assign ${o} = ${sopToVerilog(sop, enc.stateVarNames)};`);
     } else {
       // Mealy: function of state bits + inputs.
       const on = new Set<number>();
@@ -191,12 +194,12 @@ export function generateStructural(fsm: FSM): string {
         }
       }
       const sop = minimize(nb + ni, on, dc);
-      out.push(`  // ${o}: Mealy output (depends on state and inputs)`);
-      out.push(`  assign ${o} = ${sopToVerilog(sop, vars)};`);
+      e.push(`  // ${o}: Mealy output (depends on state and inputs)`);
+      e.push(`  assign ${o} = ${sopToVerilog(sop, vars)};`);
     }
   }
-  out.push('');
-  out.push('endmodule');
+  e.push('');
+  e.push('endmodule');
 
-  return out.join('\n');
+  return e.result();
 }

@@ -10,6 +10,8 @@ import { Handle, type NodeProps } from '@xyflow/react';
 import type { Assignment } from '../../model/types';
 import { useFSMStore } from '../../store/fsmStore';
 import { SideLabel } from '../../notation/SideLabel';
+import { parseStateOutputs } from '../../notation/parseLabel';
+import { serializeSide } from '../../notation/serializeLabel';
 import { HANDLE_SIDES } from './handles';
 
 export interface StateNodeData {
@@ -31,19 +33,22 @@ export function StateNode({ id, data, selected }: NodeProps) {
   const d = data as StateNodeData;
   const hasOutputs = d.outputNames.length > 0;
 
-  const notation = useFSMStore((s) => s.config.notation);
+  const config = useFSMStore((s) => s.config);
+  const notation = config.notation;
   const updateState = useFSMStore((s) => s.updateState);
+  const setStateOutputs = useFSMStore((s) => s.setStateOutputs);
   const setResetState = useFSMStore((s) => s.setResetState);
   const select = useFSMStore((s) => s.select);
   const resetSelected = useFSMStore((s) => s.selectedId === 'reset');
 
-  const [editing, setEditing] = useState(false);
+  // Which region is being edited inline: the name (top) or the outputs (bottom).
+  const [editing, setEditing] = useState<'name' | 'outputs' | null>(null);
   // While dragging the reset bolt, a ghost copy follows the cursor (see below).
   const [dragGhost, setDragGhost] = useState<{ x: number; y: number } | null>(null);
 
-  const startEditing = (e: React.MouseEvent) => {
+  const startEditing = (field: 'name' | 'outputs') => (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditing(true);
+    setEditing(field);
   };
 
   // Click the reset bolt to select it (Backspace then clears the reset); drag
@@ -148,30 +153,61 @@ export function StateNode({ id, data, selected }: NodeProps) {
         />
       ))}
 
-      {editing ? (
-        <NameInput
-          initial={d.label}
-          onCommit={(name) => {
-            if (name.trim()) updateState(id, { label: name.trim() });
-            setEditing(false);
-          }}
-          onCancel={() => setEditing(false)}
-        />
-      ) : d.isMoore && hasOutputs ? (
+      {d.isMoore && hasOutputs ? (
         <>
+          {/* Top half: state name. Double-click to rename inline, right here. */}
           <div
-            onDoubleClick={startEditing}
+            onDoubleClick={startEditing('name')}
             className="flex h-1/2 w-full items-center justify-center border-b border-slate-300 text-sm font-semibold leading-none"
           >
-            {d.label}
+            {editing === 'name' ? (
+              <NameInput
+                initial={d.label}
+                onCommit={(name) => {
+                  if (name.trim()) updateState(id, { label: name.trim() });
+                  setEditing(null);
+                }}
+                onCancel={() => setEditing(null)}
+              />
+            ) : (
+              d.label
+            )}
           </div>
-          <div className="flex h-1/2 w-full items-center justify-center text-xs leading-none text-slate-600">
-            <SideLabel assignment={d.outputs} names={d.outputNames} notation={notation} absentChar="0" />
+          {/* Bottom half: asserted outputs. Double-click to edit inline. */}
+          <div
+            onDoubleClick={startEditing('outputs')}
+            className="flex h-1/2 w-full items-center justify-center text-xs leading-none text-slate-600"
+          >
+            {editing === 'outputs' ? (
+              <OutputInput
+                initial={serializeSide(d.outputs, d.outputNames, notation, '0')}
+                placeholder={notation === 'positional' ? '10' : 'Z, !Y'}
+                onCommit={(text) => {
+                  const res = parseStateOutputs(text, config);
+                  if (res.ok) setStateOutputs(id, res.value);
+                  setEditing(null);
+                }}
+                onCancel={() => setEditing(null)}
+              />
+            ) : (
+              <SideLabel assignment={d.outputs} names={d.outputNames} notation={notation} absentChar="0" />
+            )}
           </div>
         </>
       ) : (
-        <div onDoubleClick={startEditing} className="text-sm font-semibold">
-          {d.label}
+        <div onDoubleClick={startEditing('name')} className="text-sm font-semibold">
+          {editing === 'name' ? (
+            <NameInput
+              initial={d.label}
+              onCommit={(name) => {
+                if (name.trim()) updateState(id, { label: name.trim() });
+                setEditing(null);
+              }}
+              onCancel={() => setEditing(null)}
+            />
+          ) : (
+            d.label
+          )}
         </div>
       )}
     </div>
@@ -209,6 +245,47 @@ function NameInput({
       }}
       onDoubleClick={(e) => e.stopPropagation()}
       className="nodrag w-14 rounded border border-blue-400 px-1 text-center text-sm font-semibold outline-none"
+    />
+  );
+}
+
+/** Inline text box for editing a Moore state's asserted outputs. */
+function OutputInput({
+  initial,
+  placeholder,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  placeholder: string;
+  onCommit: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  return (
+    <input
+      ref={ref}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onCommit(value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onCommit(value);
+        else if (e.key === 'Escape') onCancel();
+        e.stopPropagation();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      // Size to content (ch is exact in a mono font) so the box stays inside the
+      // bubble's bottom half and centered, matching the arc-label editor.
+      style={{ width: `${Math.max(value.length, placeholder.length, 2) + 1}ch` }}
+      className="nodrag rounded border border-blue-400 px-1 text-center font-mono text-xs outline-none"
     />
   );
 }

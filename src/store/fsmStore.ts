@@ -81,6 +81,7 @@ interface FSMStore extends FSM {
     targetHandle?: string | null,
   ) => string;
   updateTransition: (id: string, patch: Partial<Transition>) => void;
+  reverseTransition: (id: string) => void;
   removeTransition: (id: string) => void;
 }
 
@@ -216,6 +217,23 @@ export const useFSMStore = create<FSMStore>((set, get) => ({
   updateTransition: (id, patch) =>
     set((s) => ({
       transitions: s.transitions.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+    })),
+
+  // Flip the arc's direction: swap endpoints and their handles so the curve
+  // reattaches sensibly. Guard/outputs ride along unchanged.
+  reverseTransition: (id) =>
+    set((s) => ({
+      transitions: s.transitions.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              source: t.target,
+              target: t.source,
+              sourceHandle: t.targetHandle,
+              targetHandle: t.sourceHandle,
+            }
+          : t,
+      ),
     })),
 
   removeTransition: (id) =>

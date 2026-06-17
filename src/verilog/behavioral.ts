@@ -7,6 +7,7 @@
 import type { Assignment, FSM } from '../model/types';
 import { buildEncoding } from './encoding';
 import { banner, describeTransition } from './comments';
+import { makeEmitter, type GenResult } from './emit';
 
 /** Verilog boolean condition for a guard, e.g. "A && !B"; empty => "1'b1". */
 function guardCond(guard: Assignment, inputs: string[]): string {
@@ -21,101 +22,101 @@ function portList(fsm: FSM): string {
   return lines.map((l) => '    ' + l).join(',\n');
 }
 
-export function generateBehavioral(fsm: FSM): string {
+export function generateBehavioral(fsm: FSM): GenResult {
   if (fsm.states.length === 0) {
-    return '// Add at least one state to generate Verilog.';
+    return { code: '// Add at least one state to generate Verilog.', owners: [null] };
   }
 
   const enc = buildEncoding(fsm);
   const nb = enc.numBits;
   const reset = enc.codes[0]; // reset state is index 0
-  const out: string[] = [];
+  const e = makeEmitter();
 
-  out.push(banner('Behavioral FSM  —  auto-generated from the state diagram'));
-  out.push(`// Type: ${fsm.config.type.toUpperCase()}   Encoding: ${fsm.config.encoding}`);
-  out.push('');
-  out.push('module fsm (');
-  out.push(portList(fsm));
-  out.push(');');
-  out.push('');
+  e.push(banner('Behavioral FSM  —  auto-generated from the state diagram'));
+  e.push(`// Type: ${fsm.config.type.toUpperCase()}   Encoding: ${fsm.config.encoding}`);
+  e.push('');
+  e.push('module fsm (');
+  e.push(portList(fsm));
+  e.push(');');
+  e.push('');
 
   // ---- State encodings -------------------------------------------------
-  out.push('  // State encodings');
+  e.push('  // State encodings');
   for (const c of enc.codes) {
-    out.push(`  localparam [${nb - 1}:0] ${c.state.label} = ${nb}'b${c.bits};`);
+    e.push(`  localparam [${nb - 1}:0] ${c.state.label} = ${nb}'b${c.bits};`, c.state.id);
   }
-  out.push('');
-  out.push(`  reg [${nb - 1}:0] state, next_state;`);
-  out.push('');
+  e.push('');
+  e.push(`  reg [${nb - 1}:0] state, next_state;`);
+  e.push('');
 
   // ---- State register --------------------------------------------------
-  out.push('  // State register: synchronous reset to the designated reset state');
-  out.push('  always @(posedge clk) begin');
-  out.push('    if (rst)');
-  out.push(`      state <= ${reset.state.label};`);
-  out.push('    else');
-  out.push('      state <= next_state;');
-  out.push('  end');
-  out.push('');
+  e.push('  // State register: synchronous reset to the designated reset state');
+  e.push('  always @(posedge clk) begin');
+  e.push('    if (rst)');
+  e.push(`      state <= ${reset.state.label};`, reset.state.id);
+  e.push('    else');
+  e.push('      state <= next_state;');
+  e.push('  end');
+  e.push('');
 
   // ---- Next-state logic ------------------------------------------------
-  out.push('  // Next-state logic');
-  out.push('  always @(*) begin');
-  out.push('    next_state = state; // default: hold current state');
-  out.push('    case (state)');
+  e.push('  // Next-state logic');
+  e.push('  always @(*) begin');
+  e.push('    next_state = state; // default: hold current state');
+  e.push('    case (state)');
   for (const c of enc.codes) {
     const outs = fsm.transitions.filter((t) => t.source === c.state.id);
-    out.push(`      ${c.state.label}: begin`);
+    e.push(`      ${c.state.label}: begin`, c.state.id);
     if (outs.length === 0) {
-      out.push('        // no outgoing transitions');
+      e.push('        // no outgoing transitions', c.state.id);
     }
     for (const t of outs) {
       const tgt = enc.byId.get(t.target)?.state.label ?? '?';
-      out.push(`        if (${guardCond(t.guard, fsm.config.inputs)}) next_state = ${tgt}; // ${describeTransition(fsm, t)}`);
+      e.push(`        if (${guardCond(t.guard, fsm.config.inputs)}) next_state = ${tgt}; // ${describeTransition(fsm, t)}`, t.id);
     }
-    out.push('      end');
+    e.push('      end', c.state.id);
   }
-  out.push('      default: next_state = ' + reset.state.label + ';');
-  out.push('    endcase');
-  out.push('  end');
-  out.push('');
+  e.push('      default: next_state = ' + reset.state.label + ';');
+  e.push('    endcase');
+  e.push('  end');
+  e.push('');
 
   // ---- Output logic ----------------------------------------------------
-  out.push('  // Output logic');
-  out.push('  always @(*) begin');
-  for (const o of fsm.config.outputs) out.push(`    ${o} = 1'b0; // default`);
+  e.push('  // Output logic');
+  e.push('  always @(*) begin');
+  for (const o of fsm.config.outputs) e.push(`    ${o} = 1'b0; // default`);
   if (fsm.config.type === 'moore') {
-    out.push('    case (state) // Moore: outputs depend only on the current state');
+    e.push('    case (state) // Moore: outputs depend only on the current state');
     for (const c of enc.codes) {
-      out.push(`      ${c.state.label}: begin`);
+      e.push(`      ${c.state.label}: begin`, c.state.id);
       for (const o of fsm.config.outputs) {
-        out.push(`        ${o} = 1'b${c.state.outputs[o] ?? 0};`);
+        e.push(`        ${o} = 1'b${c.state.outputs[o] ?? 0};`, c.state.id);
       }
-      out.push('      end');
+      e.push('      end', c.state.id);
     }
-    out.push('      default: ;');
-    out.push('    endcase');
+    e.push('      default: ;');
+    e.push('    endcase');
   } else {
-    out.push('    case (state) // Mealy: outputs depend on state AND inputs (the arc taken)');
+    e.push('    case (state) // Mealy: outputs depend on state AND inputs (the arc taken)');
     for (const c of enc.codes) {
       const outs = fsm.transitions.filter((t) => t.source === c.state.id);
-      out.push(`      ${c.state.label}: begin`);
+      e.push(`      ${c.state.label}: begin`, c.state.id);
       for (const t of outs) {
         const sets = fsm.config.outputs
           .filter((o) => (t.outputs[o] ?? 0) === 1)
           .map((o) => `${o} = 1'b1;`);
         if (sets.length > 0) {
-          out.push(`        if (${guardCond(t.guard, fsm.config.inputs)}) begin ${sets.join(' ')} end // ${describeTransition(fsm, t)}`);
+          e.push(`        if (${guardCond(t.guard, fsm.config.inputs)}) begin ${sets.join(' ')} end // ${describeTransition(fsm, t)}`, t.id);
         }
       }
-      out.push('      end');
+      e.push('      end', c.state.id);
     }
-    out.push('      default: ;');
-    out.push('    endcase');
+    e.push('      default: ;');
+    e.push('    endcase');
   }
-  out.push('  end');
-  out.push('');
-  out.push('endmodule');
+  e.push('  end');
+  e.push('');
+  e.push('endmodule');
 
-  return out.join('\n');
+  return e.result();
 }

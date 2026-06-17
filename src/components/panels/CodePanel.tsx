@@ -2,7 +2,7 @@
 // The panel can collapse off to the right (leaving a reopen tab) and, when open,
 // be resized by dragging its left edge.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFSMStore } from '../../store/fsmStore';
 import { generateVerilog } from '../../verilog';
 
@@ -14,14 +14,23 @@ export function CodePanel() {
   const states = useFSMStore((s) => s.states);
   const transitions = useFSMStore((s) => s.transitions);
   const config = useFSMStore((s) => s.config);
+  const selectedId = useFSMStore((s) => s.selectedId);
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
 
-  const code = useMemo(
+  const { code, owners } = useMemo(
     () => generateVerilog({ config, states, transitions }),
     [config, states, transitions],
   );
+  const lines = useMemo(() => code.split('\n'), [code]);
+
+  // Scroll the first highlighted line into view when the selection changes.
+  const firstHitRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    firstHitRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedId]);
+  const firstHit = selectedId ? owners.indexOf(selectedId) : -1;
 
   const copy = async () => {
     await navigator.clipboard.writeText(code);
@@ -92,7 +101,20 @@ export function CodePanel() {
         </div>
       </div>
       <pre className="flex-1 overflow-auto p-3 text-[12px] leading-snug text-slate-100">
-        <code>{code}</code>
+        <code>
+          {lines.map((line, i) => {
+            const hit = selectedId != null && owners[i] === selectedId;
+            return (
+              <div
+                key={i}
+                ref={i === firstHit ? firstHitRef : undefined}
+                className={hit ? '-mx-3 bg-amber-400/25 px-3' : undefined}
+              >
+                {line === '' ? ' ' : line}
+              </div>
+            );
+          })}
+        </code>
       </pre>
     </div>
   );

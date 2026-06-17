@@ -256,7 +256,10 @@ function LabelInput({
         else if (e.key === 'Escape') onCancel();
         e.stopPropagation();
       }}
-      className="nodrag w-28 rounded border border-blue-400 px-1 font-mono text-xs outline-none"
+      // Size to content (ch is exact in a mono font) so the field only grows a
+      // little past the text and stays centered on the label point.
+      style={{ width: `${Math.max(value.length, placeholder.length, 3) + 1}ch` }}
+      className="nodrag rounded border border-blue-400 px-1 text-center font-mono text-xs outline-none"
     />
   );
 }

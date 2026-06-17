@@ -31,7 +31,7 @@ function fsm(overrides: Partial<FSM['config']> = {}): FSM {
 
 describe('behavioral codegen', () => {
   it('emits a three-block FSM with case statements and traced comments', () => {
-    const v = generateBehavioral(fsm());
+    const v = generateBehavioral(fsm()).code;
     expect(v).toContain('module fsm');
     expect(v).toContain('case (state)');
     expect(v).toContain('next_state = S1;');
@@ -43,7 +43,7 @@ describe('behavioral codegen', () => {
 describe('structural codegen', () => {
   it('instantiates FDRE flops and assigns minimized SOP (binary)', () => {
     const v = generateStructural(fsm({ style: 'structural',
-      notation: 'named', encoding: 'binary' }));
+      notation: 'named', encoding: 'binary' })).code;
     expect(v).toContain('FDRE #(.INIT(1\'b0))');
     expect(v).toContain('.C(clk)');
     expect(v).toContain('.CE(1\'b1)');
@@ -53,7 +53,7 @@ describe('structural codegen', () => {
 
   it('uses an FDSE for the reset bit in one-hot encoding', () => {
     const v = generateStructural(fsm({ style: 'structural',
-      notation: 'named', encoding: 'one-hot' }));
+      notation: 'named', encoding: 'one-hot' })).code;
     expect(v).toContain('FDSE #(.INIT(1\'b1))'); // reset state's own bit
     expect(v).toContain('FDRE #(.INIT(1\'b0))');
     expect(v).toMatch(/assign d_S\d? =/);
